@@ -45,19 +45,35 @@
 #'   wine.pca <- prcomp(wine, scale. = TRUE)
 #'   print(ggbiplot(wine.pca, obs.scale = 1, var.scale = 1, groups = wine.class, ellipse = TRUE, circle = TRUE))
 #'
-ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE, 
-                      obs.scale = 1 - scale, var.scale = scale, 
-                      groups = NULL, ellipse = FALSE, ellipse.prob = 0.68, 
-                      labels = NULL, labels.size = 3, alpha = 1, 
+ggbiplot <- function( pcobj, 
+                      choices = 1:2, 
+                      scale = 1, 
+                      pc.biplot = TRUE, 
+                      obs.scale = 1 - scale, 
+                      var.scale = scale, 
+                      groups = NULL, 
+                      ellipse = FALSE, 
+                      ellipse.prob = 0.68, 
+                      labels = NULL, 
+                      labels.size = 3, 
+                      alpha = 1, 
                       var.axes = TRUE, 
-                      circle = FALSE, circle.prob = 0.69, 
-                      varname.size = 3, varname.adjust = 1.5, 
-                      varname.abbrev = FALSE, ...)
+                      circle = FALSE, 
+                      circle.prob = 0.69, 
+                      varname.size = 3, 
+                      varname.adjust = 1.5, 
+                      varname.abbrev = FALSE,
+                      num_vectors = NULL,
+                      by_quad = FALSE,
+                      translation = NULL,
+                      pseudocount=1,
+                      ...)
 {
-  library(ggplot2)
-  library(plyr)
-  library(scales)
-  library(grid)
+  require(ggplot2)
+  require(plyr)
+  require(dplyr)
+  require(scales)
+  require(grid)
 
   stopifnot(length(choices) == 2)
 
@@ -157,6 +173,23 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
                          size = 1/2, alpha = 1/3)
     }
 
+    # see if we need to subset directions
+    if (!is.null(num_vectors) && num_vectors>=0){
+        df.v$len = sqrt(abs(df.v$yvar)+abs(df.v$xvar))
+        if (!is.null(by_quad)){
+            df.v$quad <- NA
+            df.v <- within(df.v, quad[xvar>0 & yvar>0] <- 1 )
+            df.v <- within(df.v, quad[xvar<0 & yvar>0] <- 2 )
+            df.v <- within(df.v, quad[xvar<0 & yvar<0] <- 3 )
+            df.v <- within(df.v, quad[xvar>0 & yvar<0] <- 4 )
+            df.v.s = group_by(df.v, quad) %>% top_n(num_vectors,len)
+        } else {
+            df.v.s = head( df.v[order(df.v$len, decreasing=TRUE), ], num_vectors)
+        }
+    } else {
+        df.v.s = df.v
+    }
+
     # Draw directions
     g <- g +
       geom_segment(data = df.v,
@@ -165,6 +198,16 @@ ggbiplot <- function(pcobj, choices = 1:2, scale = 1, pc.biplot = TRUE,
                    color = muted('red'))
   }
 
+    # test to see if translation table supplied
+  if (!is.null(translation)){
+      trans_table = read.table(translation,header=T)
+      #colnames(trans_table) = c("varname","altname")
+      colnames(trans_table) = c("tracking_id","class_code","varname","altname","tss_id","locus","length")
+      df.v.s = merge(df.v.s, trans_table)
+  } else {
+      df.v.s$altname = df.v.s$varname
+  }
+    
   # Draw either labels or points
   if(!is.null(df.u$labels)) {
     if(!is.null(df.u$groups)) {
